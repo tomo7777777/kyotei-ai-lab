@@ -1,0 +1,74 @@
+name: 予想と記録の自動更新
+
+on:
+  schedule:
+    - cron: "20 20 * * *"        # 05:20 JST 朝の予想を固定
+    - cron: "50 20 * * *"        # 05:50 JST 予備
+    - cron: "*/10 23,0-12 * * *" # 08:00-21:59 JST 展示・オッズ・結果
+    - cron: "40 13 * * *"        # 22:40 JST 最終の結果取り込み
+    - cron: "30 15 * * *"        # 00:30 JST 過去データ・選手データの更新
+    - cron: "0 17 1 * *"         # 毎月2日 02:00 JST AIの学び直し
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "morning / update / night / train"
+        required: true
+        default: update
+
+concurrency:
+  group: data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 処理の種類を決める
+        id: mode
+        run: |
+          case "${{ github.event.schedule }}" in
+            "20 20 * * *"|"50 20 * * *") m=morning ;;
+            "30 15 * * *") m=night ;;
+            "0 17 1 * *") m=train ;;
+            "") m="${{ github.event.inputs.mode }}" ;;
+            *) m=update ;;
+          esac
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+          echo "mode=$m"
+      - name: 朝の予想
+        if: steps.mode.outputs.mode == 'morning'
+        run: python scripts/daily.py morning
+      - name: 展示・オッズ・結果
+        if: steps.mode.outputs.mode == 'update'
+        run: python scripts/daily.py update
+      - name: 過去データと選手データ
+        if: steps.mode.outputs.mode == 'night' || steps.mode.outputs.mode == 'train'
+        run: |
+          python scripts/build_history.py --days 4
+          python scripts/racers.py
+          python scripts/daily.py update "$(TZ=Asia/Tokyo date -d yesterday +%Y%m%d)" || true
+      - name: AIの学び直し
+        if: steps.mode.outputs.mode == 'train'
+        run: python scripts/train.py
+      - name: 保存
+        run: |
+          git config user.name "kyotei-ai-lab-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "data: ${{ steps.mode.outputs.mode }} $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs origin main && git push origin HEAD:main && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
