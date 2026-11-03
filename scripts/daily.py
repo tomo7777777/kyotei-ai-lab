@@ -178,7 +178,9 @@ def update(hd=None):
         if key in day["picks"]:
             od = odds3t(hd, r["jcd"], r["rno"])
             if od:
+                inv = sum(1 / v for v in od.values() if v)
                 r["odds"] = {k: od.get(k) for k in r["ai"]["bets"]}
+                r["mkt"] = {k: round((1 / od[k]) / inv, 4) for k in r["ai"]["bets"] if od.get(k)}
                 r["odds_at"] = t.strftime("%H:%M")
     day["updated_at"] = t.strftime("%Y-%m-%d %H:%M")
     save_json(path, day)

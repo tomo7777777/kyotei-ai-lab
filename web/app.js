@@ -14,6 +14,7 @@
   const boat = (n) => `<span class="boat l${n}">${n}</span>`;
   const combo = (c) => c.split("-").join("-");
   const fmtDate = (hd) => `${+hd.slice(4, 6)}月${+hd.slice(6, 8)}日`;
+  const fmtDateY = (hd) => `${hd.slice(0, 4)}年${+hd.slice(4, 6)}月${+hd.slice(6, 8)}日`;
   const wd = (hd) => "日月火水木金土"[new Date(+hd.slice(0, 4), +hd.slice(4, 6) - 1, +hd.slice(6, 8)).getDay()];
   const todayJST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, "");
   const nowHM = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
@@ -62,7 +63,8 @@
     const bets = ai.bets.map((c) => {
       const pr = top[c];
       const od = r.odds?.[c];
-      const ev = od ? pr * od : null;
+      const mk = r.mkt?.[c];
+      const ev = od && mk != null ? (0.3 * pr + 0.7 * mk) * od : null;
       const hit = r.result?.tri === c;
       return `<div class="bet ${hit ? "hit" : ""}"><span class="combo">${combo(c)}${pr >= 0.2 ? ' <span class="star" title="確率20%以上">★</span>' : ""}</span>
         <span class="muted mono">${pct(pr, 1)}</span><span class="mono small">${od ? od.toFixed(1) + "倍" : ""}</span><span class="mono small">${ev ? "期待値" + Math.round(ev * 100) + "%" : ""}</span></div>`;
@@ -71,7 +73,7 @@
       <div class="row between wrap"><div class="race-title">${esc(r.venue)} ${r.rno}R</div>${resultBadge(r, ai.bets)}</div>
       <div class="row wrap muted small"><span>締切 ${esc(r.deadline)}</span><span>自信度 <b class="mono">${ai.conf}</b></span>${r.grade ? `<span>${esc(r.grade)}</span>` : ""}</div>
       <div class="lines">${lines}</div>
-      <div class="muted small" style="margin-top:10px">推奨3連単5点（★は確率20%以上）${r.odds_at ? `・オッズ ${esc(r.odds_at)}時点` : ""}</div>
+      <div class="muted small" style="margin-top:10px">推奨3連単5点（★はAIの確率20%以上）${r.odds_at ? `・オッズ ${esc(r.odds_at)}時点。期待値はAI 30%＋オッズ 70%の確率×オッズ` : ""}</div>
       <div class="bets">${bets}</div>
       <div style="margin-top:8px"><button class="back" data-open="${raceKey(r)}">レースの詳しい情報 ›</button></div>
     </div>`;
@@ -150,13 +152,13 @@
     let body = "";
     if (state.sub === "honmei") {
       const races = day.picks.map(findRace).filter(Boolean);
-      body = `<h2>AIが自信のある${races.length}レース</h2><p class="lead">${esc(day.fixed_at)}に固定した朝の予想です。一日を通して変わりません。自信度はその日の全レースの中での順位（100が一番）です。</p>`
+      body = `<h2>AIが自信のある${races.length}レース</h2><p class="lead">${esc(day.fixed_at)}に固定した予想です。一日を通して変わりません。自信度はその日の全レースの中での順位（100が一番）です。</p>`
         + (races.length ? races.map(honmeiCard).join("") : `<div class="empty">対象のレースはありません。</div>`)
         + await recordsSection("top5");
     } else {
       const races = day.head2.map(findRace).filter(Boolean);
       body = `<h2>頭2艇（1号艇が負けそうなレース）</h2><p class="lead">朝のAIで1号艇の1着率が21%以下のレースで、1号艇以外の1着候補を2艇出します。3連単の買い目は出しません。</p>`
-        + (races.length ? races.map(head2Card).join("") : `<div class="empty">今日は対象のレースがありません。</div>`)
+        + (races.length ? races.map(head2Card).join("") : `<div class="empty">この日は対象のレースがありません。${day.fixed_at.slice(11) > "08:00" ? `<br>予想を${esc(day.fixed_at.slice(11))}に作ったため、それより後のレースだけが対象です。` : ""}</div>`)
         + await recordsSection("head2");
     }
     view.innerHTML = seg + body + footer();
@@ -276,14 +278,14 @@
     const h = habits(p);
     view.innerHTML = `<button class="back" data-backracer>‹ 選手を探す</button>
       <div class="row between wrap" style="margin-top:6px"><h2 style="margin:6px 0">${esc(p.name)}</h2><button class="favbtn ${fav ? "on" : ""}" data-fav="${toban}" data-name="${esc(p.name)}">${fav ? "★ お気に入り" : "☆ お気に入りに追加"}</button></div>
-      <div class="muted small">${toban}・${esc(p.branch)}・${esc(p.cls)}・全国勝率 ${esc(p.nat_win)}・集計 ${fmtDate(p.period[0])}〜${fmtDate(p.period[1])}（${p.starts}走）</div>
+      <div class="muted small">${toban}・${esc(p.branch)}・${esc(p.cls)}・全国勝率 ${esc(p.nat_win)}・集計 ${fmtDateY(p.period[0])}〜${fmtDateY(p.period[1])}（${p.starts}走）</div>
       ${h.length ? `<div class="card"><h3>癖</h3>${h.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</div>` : ""}
       ${today.length ? `<div class="card"><h3>${fmtDate(state.date)}の出走</h3>${today.map((r) => `<button class="chip" data-open="${raceKey(r)}">${esc(r.venue)} ${r.rno}R（${r.boats.find((b) => b.toban === toban).lane}号艇）</button>`).join(" ")}</div>` : ""}
       <div class="card"><h3>コース別の成績</h3><div class="tablewrap"><table><thead><tr><th>進入</th><th>回数</th><th>1着率</th><th>2連対率</th><th>3連対率</th><th>平均ST</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="card"><h3>1着の決まり手</h3>${kim}<h3 style="margin-top:12px">1コースで負けたときの相手の決まり手</h3>${lost}</div>
       <div class="card"><h3>進入の傾向</h3><div class="tablewrap"><table><thead><tr><th>枠</th><th>回数</th><th>枠なり</th><th>内に入った</th></tr></thead><tbody>${ent}</tbody></table></div></div>
       ${fav ? `<div class="card"><h3>メモ</h3><textarea class="input" id="memo" placeholder="気づいたことをメモ">${esc(fav.memo || "")}</textarea><div class="muted small">この端末に保存されます。</div></div>` : ""}
-      <div class="card"><h3>最近の20走</h3><div class="tablewrap"><table><thead><tr><th>日付</th><th>レース</th><th>枠</th><th>進入</th><th>着</th><th>ST</th></tr></thead><tbody>${rec}</tbody></table></div></div>` + footer();
+      <div class="card"><h3>最近の20走</h3><div class="tablewrap"><table><thead><tr><th>日付</th><th style="text-align:left">レース</th><th>枠</th><th>進入</th><th>着</th><th>ST</th></tr></thead><tbody>${rec}</tbody></table></div></div>` + footer();
     const memo = document.getElementById("memo");
     if (memo) memo.addEventListener("input", () => { const ff = favs(); if (ff[toban]) { ff[toban].memo = memo.value; setFavs(ff); } });
   }
@@ -311,7 +313,7 @@
     let bt, model;
     try { [bt, model] = await Promise.all([getJSON("backtest.json", 3600e3), getJSON("model.json", 3600e3)]); } catch { view.innerHTML = `<div class="empty">検証データを読み込めませんでした。</div>`; return; }
     const m = Object.entries(bt.monthly_top5).map(([k, v]) => `<tr><td>${k.slice(0, 4)}年${+k.slice(4)}月</td><td class="mono">${v.hits}/${v.races}</td><td class="mono">${v.roi}%</td></tr>`).join("");
-    view.innerHTML = `<h2>AI検証</h2><p class="lead">学習に使っていない ${fmtDate(bt.test_from)}〜${fmtDate(bt.test_to)}（${bt.days}日・${bt.n_races.toLocaleString()}レース）で、毎朝と同じ選び方を当てはめた結果です。</p>
+    view.innerHTML = `<h2>AI検証</h2><p class="lead">学習に使っていない ${fmtDateY(bt.test_from)}〜${fmtDateY(bt.test_to)}（${bt.days}日・${bt.n_races.toLocaleString()}レース）で、毎朝と同じ選び方を当てはめた結果です。</p>
       <div class="stats">
         <div class="stat"><div class="k">AI本命の1着率</div><div class="v">${bt.honmei_win}%</div><div class="muted small">全レース</div></div>
         <div class="stat"><div class="k">本命狙い 推奨5点</div><div class="v ${bt.top5.roi >= 100 ? "good" : "bad"}">${bt.top5.roi}%</div><div class="muted small">回収率・的中率 ${bt.top5.hit_rate}%</div></div>
@@ -321,7 +323,7 @@
       <div class="card"><h3>月ごとの本命狙い（推奨5点）</h3><div class="tablewrap"><table><thead><tr><th>月</th><th>的中</th><th>回収率</th></tr></thead><tbody>${m}</tbody></table></div></div>
       <div class="card"><h3>AIの仕組み</h3>
         <p class="small">全国・当地勝率、級別、モーター・ボート2連率、年齢・体重、その枠での過去1年の1着・2連対・3連対率、平均スタート、直近30走の1着率、場ごとのイン1着率など${model.features.length}項目から、各艇の1着率を出しています。3連単の確率は1着率から計算しています。</p>
-        <p class="small">学習データ：${fmtDate(model.train_from)}〜${fmtDate(model.train_to)}の${model.n_races.toLocaleString()}レース（${esc(model.trained_at)}に学習）。毎月1日に最新のデータで学び直します。</p>
+        <p class="small">学習データ：${fmtDateY(model.train_from)}〜${fmtDateY(model.train_to)}の${model.n_races.toLocaleString()}レース（${esc(model.trained_at)}に学習）。毎月2日に最新のデータで学び直します。</p>
         <p class="small">予想の精度（小さいほど正確）：AI ${bt.logloss_model}、枠番だけ ${bt.logloss_lane_only}</p></div>
       <div class="note">控除率が約25%あるため、多くの買い目は長い目で見ると回収率100%を下回ります。過去の検証で100%を超えた条件でも、この先も勝てるとは限りません。</div>` + footer();
   }
