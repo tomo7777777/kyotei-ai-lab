@@ -47,7 +47,11 @@ jobs:
           echo "mode=$m"
       - name: 朝の予想
         if: steps.mode.outputs.mode == 'morning'
-        run: python scripts/daily.py morning
+        run: |
+          if [ ! -f "data/days/$(TZ=Asia/Tokyo date +%Y%m%d).json" ]; then
+            python scripts/build_history.py --days 2 || true   # 今節の成績用に前日分を先に取り込む
+          fi
+          python scripts/daily.py morning
       - name: 展示・オッズ・結果
         if: steps.mode.outputs.mode == 'update'
         run: python scripts/daily.py update
