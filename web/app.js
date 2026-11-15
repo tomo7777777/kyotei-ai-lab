@@ -110,6 +110,21 @@
     </div>`;
   }
 
+  function konsetsuCard(r) {
+    const ai = r.ai;
+    const b1 = r.boats[0];
+    const [bet, pr] = ai.best || ai.top[0];
+    const od = r.odds?.[bet];
+    return `<div class="card">
+      <div class="row between wrap"><div class="race-title">${esc(r.venue)} ${r.rno}R</div>${resultBadge(r, [bet])}</div>
+      <div class="row wrap muted small"><span>締切 ${esc(r.deadline)}</span>${r.grade ? `<span>${esc(r.grade)}</span>` : ""}</div>
+      <div class="lines"><div class="bline"><span class="mark">◎</span>${boat(1)}<div class="bname">${esc(b1.name)}<span class="muted">${esc(b1.cls)}・今節 ${b1.ks_n}走 平均${b1.ks_avg?.toFixed(1)}着</span></div><span class="pct">${pct(ai.p[0])}</span></div></div>
+      <div class="muted small" style="margin-top:10px">買い目（1点）</div>
+      <div class="bets"><div class="bet ${r.result?.tri === bet ? "hit" : ""}"><span class="combo">${combo(bet)}</span><span class="muted mono">${pct(pr, 1)}</span><span class="mono small">${od ? od.toFixed(1) + "倍" : ""}</span><span></span></div></div>
+      <div style="margin-top:8px"><button class="back" data-open="${raceKey(r)}">レースの詳しい情報 ›</button></div>
+    </div>`;
+  }
+
   function statBlock(title, s, kind) {
     if (!s) return "";
     const roi = s.points ? Math.round((s.pay / (s.points * 100)) * 100) : null;
@@ -126,13 +141,19 @@
     const d = rec.days.find((x) => x.date === state.date);
     const since = rec.since ? fmtDate(rec.since) : "";
     let html = `<h2>成績</h2><p class="lead">朝に決めた予想のうち、決めた時点で締切前だったレースだけを数えています（各100円）。記録開始 ${since}。</p>`;
-    if (kind === "head2") {
+    if (kind === "konsetsu") {
+      html += `<div class="stats">${statBlock(`${fmtDate(state.date)}`, d?.konsetsu)}${statBlock("記録開始から", rec.total.konsetsu)}</div>`;
+    } else if (kind === "head2") {
       html += `<div class="stats">${statBlock(`${fmtDate(state.date)}`, d?.head2, "head2")}${statBlock("記録開始から", rec.total.head2, "head2")}</div>`;
     } else {
       html += `<div class="stats">${statBlock(`${fmtDate(state.date)}・推奨5点`, d?.top5)}${statBlock("記録開始から・推奨5点", rec.total.top5)}
         ${statBlock(`${fmtDate(state.date)}・20%以上だけ`, d?.strong)}${statBlock("記録開始から・20%以上だけ", rec.total.strong)}</div>`;
     }
     const rows = rec.days.map((x) => {
+      if (kind === "konsetsu") {
+        const k = x.konsetsu || { hits: 0, races: 0, points: 0, pay: 0 };
+        return `<tr><td>${fmtDate(x.date)}</td><td class="mono">${k.hits}/${k.races}</td><td class="mono">${yen(k.pay)}</td><td class="mono">${k.points ? Math.round((k.pay / (k.points * 100)) * 100) + "%" : "–"}</td></tr>`;
+      }
       const s = kind === "head2" ? x.head2 : x.top5;
       const s2 = x.strong;
       if (kind === "head2") return `<tr><td>${fmtDate(x.date)}</td><td class="mono">${s.hits}/${s.races}</td><td class="mono">${s.races ? Math.round((s.hits / s.races) * 100) + "%" : "–"}</td></tr>`;
@@ -140,14 +161,14 @@
       const roi2 = s2.points ? Math.round((s2.pay / (s2.points * 100)) * 100) + "%" : "–";
       return `<tr><td>${fmtDate(x.date)}</td><td class="mono">${s.hits}/${s.races}</td><td class="mono">${roi}</td><td class="mono">${s2.hits}/${s2.races}</td><td class="mono">${roi2}</td></tr>`;
     }).join("");
-    const head = kind === "head2" ? `<tr><th>日付</th><th>頭的中</th><th>的中率</th></tr>` : `<tr><th>日付</th><th>5点 的中</th><th>回収率</th><th>20%以上</th><th>回収率</th></tr>`;
+    const head = kind === "konsetsu" ? `<tr><th>日付</th><th>的中</th><th>払戻</th><th>回収率</th></tr>` : kind === "head2" ? `<tr><th>日付</th><th>頭的中</th><th>的中率</th></tr>` : `<tr><th>日付</th><th>5点 的中</th><th>回収率</th><th>20%以上</th><th>回収率</th></tr>`;
     html += `<details class="card"><summary>日別の成績を見る</summary><div class="tablewrap" style="margin-top:8px"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div></details>`;
     return html;
   }
 
   async function renderAI() {
     const day = state.day;
-    const seg = `<div class="seg"><button data-sub="honmei" class="${state.sub === "honmei" ? "on" : ""}">本命狙い</button><button data-sub="head2" class="${state.sub === "head2" ? "on" : ""}">頭2艇</button></div>`;
+    const seg = `<div class="seg"><button data-sub="honmei" class="${state.sub === "honmei" ? "on" : ""}">本命狙い</button><button data-sub="konsetsu" class="${state.sub === "konsetsu" ? "on" : ""}">今節本命</button><button data-sub="head2" class="${state.sub === "head2" ? "on" : ""}">頭2艇</button></div>`;
     if (!day) { view.innerHTML = seg + `<div class="empty">この日の予想はまだありません。毎朝5時20分ごろに作ります。</div>`; return; }
     let body = "";
     if (state.sub === "honmei") {
@@ -155,6 +176,11 @@
       body = `<h2>AIが自信のある${races.length}レース</h2><p class="lead">${esc(day.fixed_at)}に固定した予想です。一日を通して変わりません。自信度はその日の全レースの中での順位（100が一番）です。</p>`
         + (races.length ? races.map(honmeiCard).join("") : `<div class="empty">対象のレースはありません。</div>`)
         + await recordsSection("top5");
+    } else if (state.sub === "konsetsu") {
+      const races = (day.konsetsu || []).map(findRace).filter(Boolean);
+      body = `<h2>今節本命（記録中）</h2><p class="lead">1号艇が今節いまひとつ（前日までの平均着順が2.5着より悪い）なのに、AIが1号艇を強く推すレースです。AIの一番の3連単を1点だけ記録します。お試しの記録なので、成績が出るまでは参考にしてください。</p>`
+        + (races.length ? races.map(konsetsuCard).join("") : `<div class="empty">この日は対象のレースがありません。</div>`)
+        + await recordsSection("konsetsu");
     } else {
       const races = day.head2.map(findRace).filter(Boolean);
       body = `<h2>頭2艇（1号艇が負けそうなレース）</h2><p class="lead">朝のAIで1号艇の1着率が21%以下のレースで、1号艇以外の1着候補を2艇出します。3連単の買い目は出しません。</p>`
@@ -176,6 +202,7 @@
       const tags = [];
       if (day.picks.includes(raceKey(r))) tags.push(`<span class="pill">本命</span>`);
       if (day.head2.includes(raceKey(r))) tags.push(`<span class="pill">頭2艇</span>`);
+      if ((day.konsetsu || []).includes(raceKey(r))) tags.push(`<span class="pill">今節本命</span>`);
       const res = r.result ? `<div class="mono small">${esc(r.result.tri)} ${yen(r.result.pay)}</div>` : `<div class="muted small">締切 ${esc(r.deadline)}</div>`;
       return `<button class="rcell" data-open="${raceKey(r)}"><div class="row between"><b>${r.rno}R</b><span class="muted small mono">◎${r.ai.honmei}</span></div>${res}<div class="row wrap">${tags.join("")}</div></button>`;
     }).join("");
@@ -196,6 +223,7 @@
     const tags = [];
     if (state.day.picks.includes(raceKey(r))) tags.push(`<span class="pill">本命狙いの対象</span>`);
     if (state.day.head2.includes(raceKey(r))) tags.push(`<span class="pill">頭2艇の対象</span>`);
+    if ((state.day.konsetsu || []).includes(raceKey(r))) tags.push(`<span class="pill">今節本命の対象</span>`);
     view.innerHTML = `<button class="back" data-backrace>‹ レース一覧</button>
       <h2>${esc(r.venue)} ${r.rno}R</h2><div class="row wrap muted small"><span>締切 ${esc(r.deadline)}</span>${r.grade ? `<span>${esc(r.grade)}</span>` : ""}<span>自信度 ${ai.conf}</span>${tags.join("")}</div>
       ${r.result ? `<div class="card"><div class="row between"><b>結果</b><span class="mono"><b>${esc(r.result.tri)}</b>　${yen(r.result.pay)}</span></div></div>` : ""}
