@@ -16,6 +16,7 @@ import time
 import requests
 
 sys.path.insert(0, os.path.dirname(__file__))
+from fetch_web import UA  # noqa: E402
 from parse_files import parse_b, parse_k, read_lzh  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +36,7 @@ def fetch(kind, d, raw_dir):
         return fn
     for _ in range(3):
         try:
-            r = requests.get(url(kind, d), timeout=60)
+            r = requests.get(url(kind, d), headers=UA, timeout=60)
             if r.status_code == 404:
                 return None
             r.raise_for_status()

@@ -13,7 +13,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
-from fetch_web import beforeinfo, odds3t, racelist, resultlist, venues_today  # noqa: E402
+from fetch_web import UA, beforeinfo, odds3t, racelist, resultlist, venues_today  # noqa: E402
 from model import ROOT, RacerState, boat_features, group_races, load_history, load_model, predict_win  # noqa: E402
 from parse_files import VENUES, parse_b, read_lzh  # noqa: E402
 from picks import add_confidence, analyze_race, konsetsu_target, select_top  # noqa: E402
@@ -90,7 +90,7 @@ def program_today(hd):
     d = dt.datetime.strptime(hd, "%Y%m%d")
     url = f"https://www1.mbrace.or.jp/od2/B/{d:%Y%m}/b{d:%y%m%d}.lzh"
     try:
-        r = requests.get(url, timeout=60)
+        r = requests.get(url, headers=UA, timeout=60)
         if r.status_code == 200 and len(r.content) > 1000:
             fn = f"/tmp/b{d:%y%m%d}.lzh"
             open(fn, "wb").write(r.content)

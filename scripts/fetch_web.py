@@ -6,7 +6,8 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE = "https://www.boatrace.jp/owpc/pc/race"
-UA = {"User-Agent": "Mozilla/5.0 (kyotei-ai-lab personal use)"}
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+      "Accept-Language": "ja"}
 Z2H = str.maketrans("０１２３４５６７８９", "0123456789")
 _session = requests.Session()
 
