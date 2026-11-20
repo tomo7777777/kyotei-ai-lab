@@ -1,0 +1,40 @@
+name: 過去オッズの取り込み（検証用）
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "開始日 YYYYMMDD"
+        required: true
+      end:
+        description: "終了日 YYYYMMDD"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        run: timeout 340m python scripts/odds_backfill.py "${{ github.event.inputs.start }}" "${{ github.event.inputs.end }}" || true
+      - name: 保存
+        run: |
+          git config user.name "kyotei-ai-lab-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/odds
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "data: odds ${{ github.event.inputs.start }}-${{ github.event.inputs.end }}"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs origin main && git push origin HEAD:main && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
