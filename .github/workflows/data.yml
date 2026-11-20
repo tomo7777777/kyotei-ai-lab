@@ -61,6 +61,7 @@ jobs:
           python scripts/build_history.py --days 4
           python scripts/racers.py
           python scripts/daily.py update "$(TZ=Asia/Tokyo date -d yesterday +%Y%m%d)" || true
+          python scripts/daily.py fill_results || true
       - name: AIの学び直し
         if: steps.mode.outputs.mode == 'train'
         run: python scripts/train.py

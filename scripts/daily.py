@@ -289,6 +289,27 @@ def records():
     save_json(os.path.join(ROOT, "data", "days_index.json"), [d["date"] for d in days[::-1]])
 
 
+def fill_results():
+    """公式サイトから結果が取れなかった日を、過去データ（競走成績ファイル）で埋める。"""
+    rows = load_history()
+    res = {}
+    for r in rows:
+        if r["tri"] and r["tri_pay"] not in ("", "0"):
+            res[(r["date"], r["jcd"], int(r["rno"]))] = {"tri": r["tri"], "pay": int(float(r["tri_pay"]))}
+    for fn in sorted(glob.glob(os.path.join(DAYS, "*.json"))):
+        day = load_json(fn)
+        n = 0
+        for r in day["races"]:
+            v = res.get((day["date"], r["jcd"], int(r["rno"])))
+            if v and not r.get("result"):
+                r["result"] = v
+                n += 1
+        if n:
+            save_json(fn, day)
+            print("filled", day["date"], n)
+    records()
+
+
 def konsetsu_backfill():
     """記録開始前の日に、朝の予想と前日までの成績だけで今節本命を付け直す（予想そのものは変えない）。"""
     rows = load_history()
@@ -316,5 +337,7 @@ if __name__ == "__main__":
         update(arg)
     elif cmd == "records":
         records()
+    elif cmd == "fill_results":
+        fill_results()
     elif cmd == "konsetsu_backfill":
         konsetsu_backfill()
