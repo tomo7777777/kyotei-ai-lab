@@ -302,7 +302,7 @@ def live_v2(hd, day, cur, t):
     for r in day["races"]:
         key = f"{r['jcd']}-{r['rno']}"
         left = minutes(r["deadline"]) - cur
-        if key in live or key not in feats or r.get("result") or not (1 <= left <= 8):
+        if key in live or key not in feats or r.get("result") or not (1 <= left <= 5):
             continue
         bi = beforeinfo(hd, r["jcd"], r["rno"])
         od = odds3t(hd, r["jcd"], r["rno"])
@@ -333,8 +333,36 @@ def records():
         day = load_json(fn)
         by_key = {f"{r['jcd']}-{r['rno']}": r for r in day["races"]}
         row = {"date": day["date"]}
-        for kind in ("top5", "strong", "head2", "konsetsu"):
+        for kind in ("top5", "strong", "head2", "konsetsu", "v2top5", "v2ev"):
             row[kind] = {"races": 0, "points": 0, "hits": 0, "pay": 0, "pending": 0}
+        for key in day.get("picks2", []):
+            r = by_key.get(key)
+            if not r or not r.get("ai2"):
+                continue
+            a = row["v2top5"]
+            res = r.get("result")
+            if not res:
+                a["pending"] += 1
+                continue
+            a["races"] += 1
+            a["points"] += len(r["ai2"]["bets"])
+            if res["tri"] in r["ai2"]["bets"]:
+                a["hits"] += 1
+                a["pay"] += res["pay"]
+        for r in day["races"]:
+            bets = (r.get("v2live") or {}).get("bets")
+            if not bets:
+                continue
+            a = row["v2ev"]
+            res = r.get("result")
+            if not res:
+                a["pending"] += 1
+                continue
+            a["races"] += 1
+            a["points"] += len(bets)
+            if res["tri"] in bets:
+                a["hits"] += 1
+                a["pay"] += res["pay"]
         for key in day.get("konsetsu", []):
             r = by_key.get(key)
             if not r:
@@ -380,7 +408,7 @@ def records():
             a["hits"] += int(res["tri"].split("-")[0]) in r["ai"]["head2"]
         days.append(row)
     total = {}
-    for kind in ("top5", "strong", "head2", "konsetsu"):
+    for kind in ("top5", "strong", "head2", "konsetsu", "v2top5", "v2ev"):
         s = {k: sum(d[kind][k] for d in days) for k in ("races", "points", "hits", "pay")}
         if s["points"]:
             s["roi"] = round(s["pay"] / (s["points"] * 100) * 100, 1)
