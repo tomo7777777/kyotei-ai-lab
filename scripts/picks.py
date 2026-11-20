@@ -58,3 +58,7 @@ def add_confidence(races):
 
 def select_top(races, n=TOP_N_RACES):
     return sorted(races, key=lambda r: -r["ai"]["score"])[:n]
+
+
+# 第2版AIの直前の期待値ルール（過去オッズでの検証後に決める。None のあいだは記録のみ）
+EV_RULE = None

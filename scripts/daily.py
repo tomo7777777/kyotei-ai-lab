@@ -258,9 +258,72 @@ def update(hd=None):
                 r["odds"] = {k: od.get(k) for k in ks}
                 r["mkt"] = {k: round((1 / od[k]) / inv, 4) for k in ks if od.get(k)}
                 r["odds_at"] = t.strftime("%H:%M")
+    # 3) 第2版AIの直前予想（締切8分前〜1分前に、展示とその時点のオッズで決める）
+    if hd == t.strftime("%Y%m%d"):
+        try:
+            live_v2(hd, day, cur, t)
+        except Exception as e:  # noqa: BLE001
+            print("live_v2 failed", e)
     day["updated_at"] = t.strftime("%Y-%m-%d %H:%M")
     save_json(path, day)
     records()
+
+
+LIVE = os.path.join(ROOT, "data", "live")
+
+
+def ev_bets(tri, odds):
+    """期待値ルールで買い目を選ぶ（picks.EV_RULE。未設定なら買わない）。"""
+    from picks import EV_RULE
+    if not EV_RULE:
+        return []
+    c = []
+    for i, k in enumerate(KEYS):
+        o = odds[i]
+        if not o:
+            continue
+        p = float(tri[i])
+        if p >= EV_RULE["min_p"] and EV_RULE["min_odds"] <= o <= EV_RULE["max_odds"] and p * o >= EV_RULE["min_ev"]:
+            c.append((p * o, k))
+    c.sort(reverse=True)
+    return [k for _, k in c[:EV_RULE["max_points"]]]
+
+
+def live_v2(hd, day, cur, t):
+    import gzip
+    fp = os.path.join(FEAT, f"{hd}.json.gz")
+    if not os.path.exists(fp):
+        return
+    feats = json.load(gzip.open(fp, "rt"))
+    lp = os.path.join(LIVE, f"{hd}.json.gz")
+    live = json.load(gzip.open(lp, "rt")) if os.path.exists(lp) else {}
+    m2 = None
+    changed = False
+    for r in day["races"]:
+        key = f"{r['jcd']}-{r['rno']}"
+        left = minutes(r["deadline"]) - cur
+        if key in live or key not in feats or r.get("result") or not (1 <= left <= 8):
+            continue
+        bi = beforeinfo(hd, r["jcd"], r["rno"])
+        od = odds3t(hd, r["jcd"], r["rno"])
+        if not bi or not od:
+            continue
+        if not r.get("tenji"):
+            r["tenji"] = {str(k): v for k, v in bi.items()}
+        m2 = m2 or load_model2()
+        X = np.hstack([np.array(feats[key]), tenji_block([bi.get(i, {}).get("tenji") for i in range(1, 7)])])
+        a, tri = ai2_from_scores(scores(m2["tenji"], X))
+        olist = [od.get(k) for k in KEYS]
+        live[key] = {"at": t.strftime("%H:%M"), "tri": [round(float(x), 5) for x in tri], "odds": olist}
+        bets = ev_bets(tri, olist)
+        r["v2live"] = {"at": t.strftime("%H:%M"), "p": a["p"],
+                       "top": [[k, pp, od.get(k)] for k, pp in a["top"][:5]],
+                       "bets": bets, "odds": {k: od.get(k) for k in bets}}
+        changed = True
+    if changed:
+        os.makedirs(LIVE, exist_ok=True)
+        with gzip.open(lp, "wt") as f:
+            json.dump(live, f, separators=(",", ":"))
 
 
 def records():
@@ -404,6 +467,9 @@ if __name__ == "__main__":
         update(arg)
     elif cmd == "records":
         records()
+    elif cmd == "all_done":
+        d = load_json(day_path(now().strftime("%Y%m%d")))
+        sys.exit(0 if d and all(r.get("result") or r.get("canceled") for r in d["races"]) else 1)
     elif cmd == "ai2_attach":
         ai2_attach(arg)
     elif cmd == "fill_results":
