@@ -16,9 +16,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from fetch_web import UA, beforeinfo, odds3t, racelist, resultlist, venues_today  # noqa: E402
 from model import ROOT, RacerState, boat_features, group_races, load_history, load_model, predict_win  # noqa: E402
 from parse_files import VENUES, parse_b, read_lzh  # noqa: E402
+from model2 import KEYS, State2, load_model2, race_features, scores, tenji_block, trifecta2  # noqa: E402
 from picks import add_confidence, analyze_race, konsetsu_target, select_top  # noqa: E402
 
 DAYS = os.path.join(ROOT, "data", "days")
+FEAT = os.path.join(ROOT, "data", "feat")
 JST = dt.timezone(dt.timedelta(hours=9))
 
 
@@ -74,6 +76,41 @@ def konsetsu_ranks(rows, hd):
         if ranks:
             out[(toban, jcd)] = ranks
     return out
+
+
+def state2(rows):
+    st = State2()
+    for race in group_races(rows):
+        st.update_race(race)
+    return st
+
+
+def ai2_from_scores(sc):
+    p1, tri = trifecta2(*sc)
+    order = np.argsort(-tri)
+    return {"p": [round(float(x), 4) for x in p1],
+            "top": [[KEYS[i], round(float(tri[i]), 4)] for i in order[:10]],
+            "bets": [KEYS[i] for i in order[:5]],
+            "score": round(float(p1.max()) * 0.5 + float(tri[order[:6]].sum()) * 0.5, 4)}, tri
+
+
+def add_ai2(races, rows, hd):
+    """第2版AIの朝の予想を各レースに付け、直前用の特徴量を data/feat に保存する。"""
+    try:
+        m2 = load_model2()
+    except FileNotFoundError:
+        return None
+    st = state2(rows)
+    feats = {}
+    for r in races:
+        X, _ = race_features([{k: str(v) for k, v in b.items()} for b in r["boats"]], st, r["jcd"], hd)
+        r["ai2"], _ = ai2_from_scores(scores(m2["morning"], X))
+        feats[f"{r['jcd']}-{r['rno']}"] = np.round(X, 5).tolist()
+    os.makedirs(FEAT, exist_ok=True)
+    import gzip
+    with gzip.open(os.path.join(FEAT, f"{hd}.json.gz"), "wt") as f:
+        json.dump(feats, f, separators=(",", ":"))
+    return m2
 
 
 def add_konsetsu(races, ks):
@@ -137,8 +174,8 @@ def morning(hd=None, force=False):
             "grade": race.get("grade", ""), "deadline": race["deadline"],
             "boats": [{
                 "lane": b["lane"], "toban": b["toban"], "name": b["name"], "cls": b["cls"], "branch": b["branch"],
-                "age": b["age"], "nat_win": b["nat_win"], "loc_win": b["loc_win"],
-                "motor_2": b["motor_2"], "boat_2": b["boat_2"],
+                "age": b["age"], "nat_win": b["nat_win"], "nat_2": b["nat_2"], "loc_win": b["loc_win"],
+                "weight": b["weight"], "motor_2": b["motor_2"], "boat_2": b["boat_2"],
                 "c_win": round(ex["c_win"], 3), "c_top3": round(ex["c_top3"], 3), "c_n": ex["c_n"],
                 "st_avg": round(ex["st_avg"], 3),
             } for b, ex in zip(boats, extras)],
@@ -146,6 +183,7 @@ def morning(hd=None, force=False):
         })
     add_confidence(races)
     add_konsetsu(races, konsetsu_ranks(rows, hd))
+    m2 = add_ai2(races, rows, hd)
     races.sort(key=lambda r: (r["deadline"], r["jcd"]))
     gen = now()
     gen_hm = gen.strftime("%H:%M")
@@ -160,6 +198,8 @@ def morning(hd=None, force=False):
         "picks": [f"{r['jcd']}-{r['rno']}" for r in top],
         "head2": [f"{r['jcd']}-{r['rno']}" for r in open_races if r["ai"]["head2"]],
         "konsetsu": [f"{r['jcd']}-{r['rno']}" for r in open_races if konsetsu_target(r)],
+        "picks2": [f"{r['jcd']}-{r['rno']}" for r in sorted(open_races, key=lambda r: -r["ai2"]["score"])[:5]] if m2 else [],
+        "model2": {"trained_at": m2.get("trained_at"), "train_to": m2.get("train_to")} if m2 else None,
         "races": races,
         "updated_at": gen.strftime("%Y-%m-%d %H:%M"),
     }
@@ -310,6 +350,33 @@ def fill_results():
     records()
 
 
+def ai2_attach(hd=None):
+    """固定済みの日に第2版AIの朝の予想を付ける（締切前のレースだけを第2版の対象にする）。"""
+    hd = hd or now().strftime("%Y%m%d")
+    path = day_path(hd)
+    day = load_json(path)
+    if not day or day.get("picks2"):
+        print("skip", hd)
+        return
+    rows = [r for r in load_history() if r["date"] < hd]
+    last = {r["toban"]: r for r in rows}
+    for r in day["races"]:
+        for b in r["boats"]:
+            h = last.get(str(b["toban"]), {})
+            b.setdefault("nat_2", float(h.get("nat_2") or 30))
+            b.setdefault("weight", int(float(h.get("weight") or 52)))
+    m2 = add_ai2(day["races"], rows, hd)
+    if not m2:
+        return
+    t = now()
+    hm = t.strftime("%H:%M")
+    open_races = [r for r in day["races"] if r["deadline"] > hm or t.strftime("%Y%m%d") < hd]
+    day["picks2"] = [f"{r['jcd']}-{r['rno']}" for r in sorted(open_races, key=lambda r: -r["ai2"]["score"])[:5]]
+    day["model2"] = {"trained_at": m2.get("trained_at"), "train_to": m2.get("train_to"), "attached_at": t.strftime("%Y-%m-%d %H:%M")}
+    save_json(path, day)
+    print("ai2", hd, day["picks2"])
+
+
 def konsetsu_backfill():
     """記録開始前の日に、朝の予想と前日までの成績だけで今節本命を付け直す（予想そのものは変えない）。"""
     rows = load_history()
@@ -337,6 +404,8 @@ if __name__ == "__main__":
         update(arg)
     elif cmd == "records":
         records()
+    elif cmd == "ai2_attach":
+        ai2_attach(arg)
     elif cmd == "fill_results":
         fill_results()
     elif cmd == "konsetsu_backfill":

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "morning / update / night / train"
+        description: "morning / update / night / train / ai2"
         required: true
         default: update
 
@@ -52,6 +52,11 @@ jobs:
             python scripts/build_history.py --days 2 || true   # 今節の成績用に前日分を先に取り込む
           fi
           python scripts/daily.py morning
+      - name: 第2版AIを今日の予想に付ける
+        if: steps.mode.outputs.mode == 'ai2'
+        run: |
+          python scripts/build_history.py --days 2 || true
+          python scripts/daily.py ai2_attach
       - name: 展示・オッズ・結果
         if: steps.mode.outputs.mode == 'update'
         run: python scripts/daily.py update
@@ -64,7 +69,9 @@ jobs:
           python scripts/daily.py fill_results || true
       - name: AIの学び直し
         if: steps.mode.outputs.mode == 'train'
-        run: python scripts/train.py
+        run: |
+          python scripts/train.py
+          python scripts/train2.py
       - name: 保存
         run: |
           git config user.name "kyotei-ai-lab-bot"

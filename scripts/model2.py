@@ -124,18 +124,7 @@ def race_features(boats, st: State2, jcd, hd, tenji=None):
         f["in_st_diff"] = (f["st_avg"] - inner["st_avg"]) if inner else 0.0
         f["in_cls_diff"] = (f["cls"] - inner["cls"]) if inner else 0.0
         f["out_max_win"] = max((x["nat_win"] for x in raw[i + 1:i + 4]), default=0.0) - f["nat_win"]
-    if tenji is not None:
-        t = np.array(tenji, dtype=float)
-        ok = t > 0
-        best = t[ok].min() if ok.any() else 0
-        for i, f in enumerate(raw):
-            if ok[i]:
-                f["tj_diff"] = (t[i] - best) * 10
-                f["tj_rank"] = 1 + int(sum(t[ok] < t[i]))
-                f["tj_best"] = 1.0 if f["tj_rank"] == 1 else 0.0
-            else:
-                f["tj_diff"], f["tj_rank"], f["tj_best"] = 1.0, 3.5, 0.0
-    names = feature_names(tenji is not None)
+    names = feature_names(False)
     X = []
     for f in raw:
         lane = f["lane"]
@@ -145,12 +134,31 @@ def race_features(boats, st: State2, jcd, hd, tenji=None):
             on = 1.0 if lane in lanes else 0.0
             for x in INTER:
                 f[f"{g}_{x}"] = on * f[x]
-            if tenji is not None:
-                f[f"{g}_tj_diff"] = on * f["tj_diff"]
         X.append([f[x] for x in names])
+    X = np.array(X, dtype=np.float64)
+    if tenji is not None:
+        X = np.hstack([X, tenji_block(tenji)])
     extra = [{"ks_n": len(f["_ks"]), "ks_avg": round(sum(f["_ks"]) / len(f["_ks"]), 2) if f["_ks"] else None,
               "c_n": f["_n"]} for f in raw]
-    return np.array(X, dtype=np.float64), extra
+    return X, extra
+
+
+def tenji_block(tenji):
+    """展示タイム6艇分 -> (6, 7) の特徴量（TENJI と枠グループ別の展示差）。"""
+    t = np.array([float(x or 0) for x in tenji], dtype=float)
+    ok = t > 0
+    best = t[ok].min() if ok.any() else 0
+    out = []
+    for i in range(6):
+        lane = i + 1
+        if ok[i]:
+            diff = (t[i] - best) * 10
+            rank = 1 + int(sum(t[ok] < t[i]))
+            top = 1.0 if rank == 1 else 0.0
+        else:
+            diff, rank, top = 1.0, 3.5, 0.0
+        out.append([diff, rank, top] + [diff if lane in lanes else 0.0 for lanes in LANE_GROUPS.values()])
+    return np.array(out, dtype=np.float64)
 
 
 def build_dataset2(rows, tenji=False):
