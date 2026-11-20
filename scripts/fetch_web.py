@@ -19,7 +19,8 @@ def get(path, **params):
             r.raise_for_status()
             time.sleep(0.4)
             return BeautifulSoup(r.text, "html.parser")
-        except requests.RequestException:
+        except requests.RequestException as e:
+            print("fetch failed", path, params, type(e).__name__, getattr(getattr(e, "response", None), "status_code", ""), flush=True)
             time.sleep(3 + i * 3)
     return None
 

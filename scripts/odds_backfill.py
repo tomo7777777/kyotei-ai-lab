@@ -2,8 +2,8 @@
 
   python scripts/odds_backfill.py 20260901 20260915
 """
-import datetime as dt
 import gzip
+import time
 import json
 import os
 import sys
@@ -26,8 +26,11 @@ def main(start, end):
         if os.path.exists(fn):
             continue
         out, miss = {}, 0
-        for j, n in rs:
+        t0 = time.time()
+        for c, (j, n) in enumerate(rs):
             od = odds3t(d, j, n)
+            if c < 3 or c % 30 == 0:
+                print(d, j, n, "ok" if od else "none", f"{time.time() - t0:.0f}s", flush=True)
             if od:
                 out[f"{j}-{n}"] = [od.get(f"{a}-{b}-{c}") for a in range(1, 7) for b in range(1, 7) for c in range(1, 7)
                                    if len({a, b, c}) == 3]
