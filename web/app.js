@@ -125,6 +125,31 @@
     </div>`;
   }
 
+  function v2Card(r) {
+    const ai = r.ai2;
+    const order = [...r.boats].sort((a, b) => ai.p[b.lane - 1] - ai.p[a.lane - 1]);
+    const lines = order.map((b) => {
+      const p = ai.p[b.lane - 1];
+      return `<div class="bline"><span class="mark"></span>${boat(b.lane)}<div class="bname">${esc(b.name)}<span class="muted">${esc(b.cls)}${b.ks_avg != null ? `・今節平均${b.ks_avg.toFixed(1)}着` : ""}</span><div class="bar"><i style="width:${Math.min(100, p * 100 / 0.8)}%"></i></div></div><span class="pct">${pct(p)}</span></div>`;
+    }).join("");
+    const top = Object.fromEntries(ai.top);
+    const bets = ai.bets.map((c) => `<div class="bet ${r.result?.tri === c ? "hit" : ""}"><span class="combo">${combo(c)}</span><span class="muted mono">${pct(top[c], 1)}</span><span></span><span></span></div>`).join("");
+    let live = `<div class="muted small" style="margin-top:8px">締切の約5分前に、展示とその時点のオッズを入れた予想がここに出ます。</div>`;
+    if (r.v2live) {
+      live = `<div class="muted small" style="margin-top:10px">直前の予想（${esc(r.v2live.at)}時点・展示とオッズ入り）。期待値は目安で、過去4か月の確かめでは期待値の高い目だけを買っても回収率100%は超えませんでした。</div><div class="bets">`
+        + r.v2live.top.map(([c, p, od]) => `<div class="bet ${r.result?.tri === c ? "hit" : ""}"><span class="combo">${combo(c)}</span><span class="muted mono">${pct(p, 1)}</span><span class="mono small">${od ? od.toFixed(1) + "倍" : ""}</span><span class="mono small">${od ? "期待値" + Math.round(p * od * 100) + "%" : ""}</span></div>`).join("") + `</div>`;
+    }
+    return `<div class="card">
+      <div class="row between wrap"><div class="race-title">${esc(r.venue)} ${r.rno}R</div>${resultBadge(r, ai.bets)}</div>
+      <div class="row wrap muted small"><span>締切 ${esc(r.deadline)}</span>${r.grade ? `<span>${esc(r.grade)}</span>` : ""}</div>
+      <div class="lines">${lines}</div>
+      <div class="muted small" style="margin-top:10px">朝の3連単5点</div>
+      <div class="bets">${bets}</div>
+      ${live}
+      <div style="margin-top:8px"><button class="back" data-open="${raceKey(r)}">レースの詳しい情報 ›</button></div>
+    </div>`;
+  }
+
   function statBlock(title, s, kind) {
     if (!s) return "";
     const roi = s.points ? Math.round((s.pay / (s.points * 100)) * 100) : null;
@@ -141,6 +166,10 @@
     const d = rec.days.find((x) => x.date === state.date);
     const since = rec.since ? fmtDate(rec.since) : "";
     let html = `<h2>成績</h2><p class="lead">朝に決めた予想のうち、決めた時点で締切前だったレースだけを数えています（各100円）。記録開始 ${since}。</p>`;
+    if (kind === "v2top5") {
+      html += `<div class="stats">${statBlock(`${fmtDate(state.date)}・新AI 5点`, d?.v2top5)}${statBlock("記録開始から・新AI 5点", rec.total.v2top5)}${statBlock("参考・今までのAI 5点（記録開始から）", rec.total.top5)}</div>`;
+      return html;
+    }
     if (kind === "konsetsu") {
       html += `<div class="stats">${statBlock(`${fmtDate(state.date)}`, d?.konsetsu)}${statBlock("記録開始から", rec.total.konsetsu)}</div>`;
     } else if (kind === "head2") {
@@ -168,7 +197,7 @@
 
   async function renderAI() {
     const day = state.day;
-    const seg = `<div class="seg"><button data-sub="honmei" class="${state.sub === "honmei" ? "on" : ""}">本命狙い</button><button data-sub="konsetsu" class="${state.sub === "konsetsu" ? "on" : ""}">今節本命</button><button data-sub="head2" class="${state.sub === "head2" ? "on" : ""}">頭2艇</button></div>`;
+    const seg = `<div class="seg"><button data-sub="honmei" class="${state.sub === "honmei" ? "on" : ""}">本命狙い</button><button data-sub="konsetsu" class="${state.sub === "konsetsu" ? "on" : ""}">今節本命</button><button data-sub="head2" class="${state.sub === "head2" ? "on" : ""}">頭2艇</button><button data-sub="v2" class="${state.sub === "v2" ? "on" : ""}">新AI</button></div>`;
     if (!day) { view.innerHTML = seg + `<div class="empty">この日の予想はまだありません。毎朝5時20分ごろに作ります。</div>`; return; }
     let body = "";
     if (state.sub === "honmei") {
@@ -176,6 +205,11 @@
       body = `<h2>AIが自信のある${races.length}レース</h2><p class="lead">${esc(day.fixed_at)}に固定した予想です。一日を通して変わりません。自信度はその日の全レースの中での順位（100が一番）です。</p>`
         + (races.length ? races.map(honmeiCard).join("") : `<div class="empty">対象のレースはありません。</div>`)
         + await recordsSection("top5");
+    } else if (state.sub === "v2") {
+      const races = (day.picks2 || []).map(findRace).filter((r) => r && r.ai2);
+      body = `<h2>新AI（第2版・試験中）</h2><p class="lead">1着だけでなく2着・3着の並びも学び、今節の調子や展示も使うように作り直したAIです。過去約4万レースの確かめでは、5点の的中率が今までのAIより約2ポイント高くなりました（32.6%→34.8%）。回収率はまだ今までのAIと同じくらいなので、成績がたまるまでは見比べ用にしてください。</p>`
+        + (races.length ? races.map(v2Card).join("") : `<div class="empty">この日の新AIの予想はありません（11月21日から記録しています）。</div>`)
+        + await recordsSection("v2top5");
     } else if (state.sub === "konsetsu") {
       const races = (day.konsetsu || []).map(findRace).filter(Boolean);
       body = `<h2>今節本命（記録中）</h2><p class="lead">1号艇が今節いまひとつ（前日までの平均着順が2.5着より悪い）なのに、AIが1号艇を強く推すレースです。AIの一番の3連単を1点だけ記録します。お試しの記録なので、成績が出るまでは参考にしてください。</p>`
