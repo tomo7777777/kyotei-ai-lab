@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   loop:
@@ -29,6 +30,8 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: 2分ごとに更新し、約10分ごとに保存
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "kyotei-ai-lab-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -47,7 +50,11 @@ jobs:
           while true; do
             hm=$(TZ=Asia/Tokyo date +%H%M)
             if [ "$hm" -ge 2235 ] || [ "$hm" -lt 0700 ]; then echo "本日の受付時間外"; break; fi
-            if [ $(( $(date +%s) - start )) -gt 20400 ]; then echo "5時間40分たったので次の実行に引き継ぐ"; break; fi
+            if [ $(( $(date +%s) - start )) -gt 20400 ]; then
+              echo "5時間40分たったので次の実行に引き継ぐ"
+              gh workflow run live.yml --ref main || true
+              break
+            fi
             timeout 600 python scripts/daily.py update || echo "更新に失敗（次の回で再試行）"
             if [ $(( $(date +%s) - last )) -ge 540 ]; then save; last=$(date +%s); fi
             if python scripts/daily.py all_done; then echo "全レースの結果がそろった"; break; fi
